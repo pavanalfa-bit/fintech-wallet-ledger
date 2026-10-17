@@ -1,0 +1,59 @@
+# Render Infrastructure Blueprint (render.yaml)
+# Free-Tier friendly deployment for Fintech Wallet & Double-Entry Ledger
+services:
+  # 1. Core Wallet & Double-Entry Ledger Service
+  - type: web
+    name: fintech-wallet-service
+    env: docker
+    dockerfilePath: Dockerfile.wallet
+    plan: free
+    region: oregon
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: SPRING_DATASOURCE_URL
+        fromDatabase:
+          name: fintech-postgres
+          property: connectionString
+      - key: OUTBOX_PUBLISHER_ENABLED
+        value: "true"
+      - key: OUTBOX_PUBLISHER_INTERVAL_MS
+        value: "1500"
+      # Upstash Kafka (Free Serverless Kafka) or Managed Kafka credentials
+      - key: KAFKA_BOOTSTRAP_SERVERS
+        sync: false
+      - key: KAFKA_SECURITY_PROTOCOL
+        value: "SASL_SSL"
+      - key: KAFKA_SASL_MECHANISM
+        value: "SCRAM-SHA-256"
+      - key: KAFKA_SASL_JAAS_CONFIG
+        sync: false
+
+  # 2. Notification Consumer Service
+  - type: web
+    name: fintech-notification-service
+    env: docker
+    dockerfilePath: Dockerfile.notification
+    plan: free
+    region: oregon
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: PORT
+        value: 8081
+      - key: KAFKA_BOOTSTRAP_SERVERS
+        sync: false
+      - key: KAFKA_SECURITY_PROTOCOL
+        value: "SASL_SSL"
+      - key: KAFKA_SASL_MECHANISM
+        value: "SCRAM-SHA-256"
+      - key: KAFKA_SASL_JAAS_CONFIG
+        sync: false
+
+databases:
+  # Managed PostgreSQL Database (Render Free Tier)
+  - name: fintech-postgres
+    databaseName: wallet_db
+    user: fintech_user
+    plan: free
+    region: oregon

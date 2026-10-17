@@ -1,0 +1,32 @@
+# Multi-stage Dockerfile for Notification Consumer Service
+FROM maven:3.9.9-eclipse-temurin-17 AS builder
+WORKDIR /workspace
+
+# Cache dependencies
+COPY pom.xml .
+COPY common-events/pom.xml common-events/
+COPY wallet-service/pom.xml wallet-service/
+COPY notification-service/pom.xml notification-service/
+RUN mvn dependency:go-offline -B -pl common-events,notification-service -am || true
+
+# Copy sources and build
+COPY common-events common-events
+COPY notification-service notification-service
+RUN mvn clean package -DskipTests -pl common-events,notification-service -am
+
+# Runtime Stage
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+COPY --from=builder /workspace/notification-service/target/notification-service-*.jar app.jar
+
+ENV PORT=8081
+EXPOSE 8081
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8081/actuator/health || exit 1
+
+ENTRYPOINT ["java", "-XX:+UseG1GC", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
