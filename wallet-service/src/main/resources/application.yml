@@ -11,8 +11,8 @@ spring:
 
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/wallet_db}
-    username: ${SPRING_DATASOURCE_USERNAME:fintech_user}
-    password: ${SPRING_DATASOURCE_PASSWORD:fintech_secret}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:Pavan@123}
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: FintechWalletHikariCP
@@ -50,15 +50,13 @@ spring:
       acks: all
       retries: 3
     properties:
-      security.protocol: ${KAFKA_SECURITY_PROTOCOL:}
-      sasl.mechanism: ${KAFKA_SASL_MECHANISM:}
-      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
 
 fintech:
   outbox:
     publisher:
       enabled: ${OUTBOX_PUBLISHER_ENABLED:true}
-      interval-ms: ${OUTBOX_PUBLISHER_INTERVAL_MS:1000}
+      interval-ms: ${OUTBOX_PUBLISHER_INTERVAL_MS:2000}
 
 springdoc:
   api-docs:
