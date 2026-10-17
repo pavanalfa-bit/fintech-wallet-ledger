@@ -17,18 +17,20 @@ services:
           name: fintech-postgres
           property: connectionString
       - key: OUTBOX_PUBLISHER_ENABLED
-        value: "true"
+        value: "false" # Set to "true" when connecting to Confluent Cloud or an external Kafka broker
       - key: OUTBOX_PUBLISHER_INTERVAL_MS
-        value: "1500"
-      # Upstash Kafka (Free Serverless Kafka) or Managed Kafka credentials
+        value: "2000"
+      # Optional Kafka configuration (Uncomment and fill if using Confluent Cloud / Aiven)
       - key: KAFKA_BOOTSTRAP_SERVERS
-        sync: false
+        value: "localhost:9092"
       - key: KAFKA_SECURITY_PROTOCOL
-        value: "SASL_SSL"
-      - key: KAFKA_SASL_MECHANISM
-        value: "SCRAM-SHA-256"
-      - key: KAFKA_SASL_JAAS_CONFIG
-        sync: false
+        value: "PLAINTEXT"
+      # To enable Confluent Cloud, set:
+      # KAFKA_BOOTSTRAP_SERVERS: "pkc-xxxx.us-east-1.aws.confluent.cloud:9092"
+      # KAFKA_SECURITY_PROTOCOL: "SASL_SSL"
+      # KAFKA_SASL_MECHANISM: "PLAIN"
+      # KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="<API_KEY>" password="<API_SECRET>";'
+      # OUTBOX_PUBLISHER_ENABLED: "true"
 
   # 2. Notification Consumer Service
   - type: web
@@ -42,13 +44,9 @@ services:
       - key: PORT
         value: 8081
       - key: KAFKA_BOOTSTRAP_SERVERS
-        sync: false
+        value: "localhost:9092"
       - key: KAFKA_SECURITY_PROTOCOL
-        value: "SASL_SSL"
-      - key: KAFKA_SASL_MECHANISM
-        value: "SCRAM-SHA-256"
-      - key: KAFKA_SASL_JAAS_CONFIG
-        sync: false
+        value: "PLAINTEXT"
 
 databases:
   # Managed PostgreSQL Database (Render Free Tier)
