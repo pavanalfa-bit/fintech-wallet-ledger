@@ -4,13 +4,12 @@ import com.fintech.wallet.dto.AccountDto;
 import com.fintech.wallet.dto.CreateAccountRequest;
 import com.fintech.wallet.dto.TransferRequest;
 import com.fintech.wallet.dto.TransferResponse;
-import com.fintech.wallet.model.AccountType;
-import com.fintech.wallet.model.EntryType;
-import com.fintech.wallet.model.LedgerEntry;
-import com.fintech.wallet.model.LedgerTransaction;
+import com.fintech.wallet.exception.LedgerInvariantException;
+import com.fintech.wallet.model.*;
 import com.fintech.wallet.repository.AccountRepository;
 import com.fintech.wallet.repository.LedgerEntryRepository;
 import com.fintech.wallet.repository.LedgerTransactionRepository;
+import com.fintech.wallet.service.LedgerService;
 import com.fintech.wallet.service.TransferService;
 import com.fintech.wallet.service.WalletService;
 import org.junit.jupiter.api.DisplayName;
@@ -19,13 +18,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -46,6 +45,9 @@ public class DoubleEntryLedgerTest {
 
     @Autowired
     private TransferService transferService;
+
+    @Autowired
+    private LedgerService ledgerService;
 
     @Autowired
     private LedgerTransactionRepository transactionRepository;
@@ -114,5 +116,52 @@ public class DoubleEntryLedgerTest {
 
         assertThat(updatedSender.getBalance()).isEqualByComparingTo(new BigDecimal("324.50"));
         assertThat(updatedReceiver.getBalance()).isEqualByComparingTo(new BigDecimal("275.50"));
+    }
+
+    @Test
+    @DisplayName("LedgerService strictly rejects unbalanced entries with LedgerInvariantException")
+    void testUnbalancedLedgerEntriesRejected() {
+        Account dummyAcc1 = accountRepository.save(Account.builder()
+                .accountNumber("ACC-DUMMY-1")
+                .userId("usr-1")
+                .accountType(AccountType.LIABILITY)
+                .currency("USD")
+                .balance(new BigDecimal("100.00"))
+                .status(AccountStatus.ACTIVE)
+                .build());
+
+        Account dummyAcc2 = accountRepository.save(Account.builder()
+                .accountNumber("ACC-DUMMY-2")
+                .userId("usr-2")
+                .accountType(AccountType.LIABILITY)
+                .currency("USD")
+                .balance(new BigDecimal("100.00"))
+                .status(AccountStatus.ACTIVE)
+                .build());
+
+        // Attempting an unbalanced entry: Debit $100 vs Credit $90
+        List<LedgerService.EntryDraft> unbalancedEntries = List.of(
+                LedgerService.EntryDraft.builder()
+                        .account(dummyAcc1)
+                        .entryType(EntryType.DEBIT)
+                        .amount(new BigDecimal("100.00"))
+                        .currency("USD")
+                        .build(),
+                LedgerService.EntryDraft.builder()
+                        .account(dummyAcc2)
+                        .entryType(EntryType.CREDIT)
+                        .amount(new BigDecimal("90.00"))
+                        .currency("USD")
+                        .build()
+        );
+
+        assertThatThrownBy(() -> ledgerService.recordTransaction(
+                "UNBALANCED-REF-" + UUID.randomUUID(),
+                "KEY-UNBALANCED",
+                TransactionType.TRANSFER,
+                "Illegal unbalanced transaction",
+                unbalancedEntries
+        )).isInstanceOf(LedgerInvariantException.class)
+          .hasMessageContaining("Ledger imbalance: Debits (100.00 USD) do not equal Credits (90.00 USD)");
     }
 }

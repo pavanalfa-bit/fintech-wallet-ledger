@@ -4,6 +4,7 @@ import com.fintech.wallet.dto.AccountDto;
 import com.fintech.wallet.dto.CreateAccountRequest;
 import com.fintech.wallet.dto.TransferRequest;
 import com.fintech.wallet.dto.TransferResponse;
+import com.fintech.wallet.exception.IdempotencyConflictException;
 import com.fintech.wallet.model.AccountType;
 import com.fintech.wallet.service.TransferService;
 import com.fintech.wallet.service.WalletService;
@@ -18,6 +19,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -85,5 +87,51 @@ public class IdempotencyTest {
 
         assertThat(finalSender.getBalance()).isEqualByComparingTo(new BigDecimal("125.00"));
         assertThat(finalReceiver.getBalance()).isEqualByComparingTo(new BigDecimal("125.00"));
+    }
+
+    @Test
+    @DisplayName("Reusing an Idempotency-Key with different payload parameters triggers IdempotencyConflictException")
+    void testIdempotencyKeyReuseWithDifferentPayloadThrowsConflict() {
+        AccountDto sender = walletService.createAccount(CreateAccountRequest.builder()
+                .userId("user-frank")
+                .accountType(AccountType.LIABILITY)
+                .currency("USD")
+                .initialBalance(new BigDecimal("500.00"))
+                .build());
+
+        AccountDto receiver = walletService.createAccount(CreateAccountRequest.builder()
+                .userId("user-grace")
+                .accountType(AccountType.LIABILITY)
+                .currency("USD")
+                .initialBalance(new BigDecimal("100.00"))
+                .build());
+
+        String idempotencyKey = "REUSE-KEY-" + UUID.randomUUID();
+
+        TransferRequest originalRequest = TransferRequest.builder()
+                .referenceId("REF-ORIGINAL-" + UUID.randomUUID())
+                .sourceAccountNumber(sender.getAccountNumber())
+                .destinationAccountNumber(receiver.getAccountNumber())
+                .amount(new BigDecimal("100.00"))
+                .currency("USD")
+                .description("Original transfer")
+                .build();
+
+        TransferResponse response = transferService.executeTransfer(idempotencyKey, originalRequest);
+        assertThat(response).isNotNull();
+
+        // Attempting to reuse the exact same key but with amount $250.00 instead of $100.00
+        TransferRequest alteredRequest = TransferRequest.builder()
+                .referenceId("REF-ALTERED-" + UUID.randomUUID())
+                .sourceAccountNumber(sender.getAccountNumber())
+                .destinationAccountNumber(receiver.getAccountNumber())
+                .amount(new BigDecimal("250.00"))
+                .currency("USD")
+                .description("Altered transfer attempt")
+                .build();
+
+        assertThatThrownBy(() -> transferService.executeTransfer(idempotencyKey, alteredRequest))
+                .isInstanceOf(IdempotencyConflictException.class)
+                .hasMessageContaining("previously used with different request parameters");
     }
 }

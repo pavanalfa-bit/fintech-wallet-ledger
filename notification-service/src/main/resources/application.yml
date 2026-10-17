@@ -1,9 +1,13 @@
 server:
   port: ${PORT:8081}
+  shutdown: graceful
 
 spring:
   application:
     name: notification-service
+
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
 
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:notificationdb;DB_CLOSE_DELAY=-1}
@@ -12,6 +16,7 @@ spring:
     driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.h2.Driver}
 
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: false
@@ -21,6 +26,7 @@ spring:
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:notification-service-group}
       auto-offset-reset: earliest
+      enable-auto-commit: true
     properties:
       security.protocol: ${KAFKA_SECURITY_PROTOCOL:}
       sasl.mechanism: ${KAFKA_SASL_MECHANISM:}
@@ -41,4 +47,16 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.fintech: INFO

@@ -1,9 +1,13 @@
 server:
   port: ${PORT:8080}
+  shutdown: graceful
 
 spring:
   application:
     name: wallet-service
+
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
 
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/wallet_db}
@@ -11,18 +15,27 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:fintech_secret}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 20
+      pool-name: FintechWalletHikariCP
+      maximum-pool-size: 25
       minimum-idle: 5
-      connection-timeout: 30000
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      leak-detection-threshold: 5000
 
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: validate
+    open-in-view: false
     show-sql: false
     properties:
       hibernate:
         format_sql: false
+        jdbc:
+          batch_size: 25
+          order_inserts: true
+          order_updates: true
 
   flyway:
     enabled: true
@@ -57,7 +70,22 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.fintech: INFO
+    org.hibernate.SQL: WARN

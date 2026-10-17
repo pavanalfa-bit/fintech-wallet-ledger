@@ -8,6 +8,7 @@ import com.fintech.notification.model.NotificationLog;
 import com.fintech.notification.repository.NotificationLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +43,12 @@ public class TransferEventsConsumer {
     }
 
     private void handleTransferCompleted(TransferCompletedEvent event) {
+        // Idempotent consumer check
+        if (event.getEventId() != null && notificationLogRepository.findByEventId(event.getEventId()).isPresent()) {
+            log.info("Duplicate event [{}] skipped by consumer (idempotent listener)", event.getEventId());
+            return;
+        }
+
         log.info(">>> NOTIFICATION SENT: Transfer SUCCESS [Ref: {}]. Transferred {} {} from account {} to account {}",
                 event.getReferenceId(),
                 event.getAmount(),
@@ -59,10 +66,20 @@ public class TransferEventsConsumer {
                         event.getAmount(), event.getCurrency(), event.getDescription()))
                 .build();
 
-        notificationLogRepository.save(logEntry);
+        try {
+            notificationLogRepository.save(logEntry);
+        } catch (DataIntegrityViolationException ex) {
+            log.warn("Event [{}] was concurrently recorded by another consumer instance", event.getEventId());
+        }
     }
 
     private void handleTransferFailed(TransferFailedEvent event) {
+        // Idempotent consumer check
+        if (event.getEventId() != null && notificationLogRepository.findByEventId(event.getEventId()).isPresent()) {
+            log.info("Duplicate event [{}] skipped by consumer (idempotent listener)", event.getEventId());
+            return;
+        }
+
         log.warn(">>> NOTIFICATION SENT: Transfer FAILED [Ref: {}]. Reason: {}",
                 event.getReferenceId(), event.getFailureReason());
 
@@ -76,6 +93,10 @@ public class TransferEventsConsumer {
                         event.getAmount(), event.getCurrency(), event.getFailureReason()))
                 .build();
 
-        notificationLogRepository.save(logEntry);
+        try {
+            notificationLogRepository.save(logEntry);
+        } catch (DataIntegrityViolationException ex) {
+            log.warn("Event [{}] was concurrently recorded by another consumer instance", event.getEventId());
+        }
     }
 }

@@ -15,7 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -31,27 +33,36 @@ public class OutboxPublisher {
 
     @Scheduled(fixedDelayString = "${fintech.outbox.publisher.interval-ms:1000}")
     public void processOutboxEvents() {
-        List<OutboxEvent> pendingEvents = outboxEventRepository.findPendingOrRetryableEvents(
-                OutboxStatus.PENDING,
-                MAX_RETRIES,
-                PageRequest.of(0, BATCH_SIZE)
-        );
-
-        if (pendingEvents.isEmpty()) {
+        List<UUID> pendingEventIds = fetchPendingBatchIds();
+        if (pendingEventIds.isEmpty()) {
             return;
         }
 
-        log.debug("Processing {} pending outbox event(s)", pendingEvents.size());
+        log.debug("Found {} pending outbox event(s) to dispatch", pendingEventIds.size());
 
-        for (OutboxEvent event : pendingEvents) {
-            publishSingleEvent(event);
+        for (UUID eventId : pendingEventIds) {
+            publishSingleEvent(eventId);
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<UUID> fetchPendingBatchIds() {
+        return outboxEventRepository.findPendingOrRetryableEvents(
+                OutboxStatus.PENDING,
+                MAX_RETRIES,
+                PageRequest.of(0, BATCH_SIZE)
+        ).stream().map(OutboxEvent::getId).collect(Collectors.toList());
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void publishSingleEvent(OutboxEvent event) {
+    public void publishSingleEvent(UUID eventId) {
+        OutboxEvent event = outboxEventRepository.findById(eventId).orElse(null);
+        if (event == null || event.getStatus() == OutboxStatus.PUBLISHED) {
+            return;
+        }
+
         try {
-            // Send synchronously with timeout to ensure Kafka broker ack before marking published
+            // Synchronous delivery verification with 5s timeout
             kafkaTemplate.send(event.getTopic(), event.getAggregateId(), event.getPayload())
                     .get(5, TimeUnit.SECONDS);
 
@@ -59,7 +70,7 @@ public class OutboxPublisher {
             event.setProcessedAt(Instant.now());
             event.setErrorMessage(null);
             outboxEventRepository.save(event);
-            log.info("Outbox event [{}] successfully published to topic [{}]", event.getId(), event.getTopic());
+            log.info("Outbox event [{}] successfully published to Kafka topic [{}]", event.getId(), event.getTopic());
         } catch (Exception ex) {
             log.warn("Failed to publish outbox event [{}] to topic [{}]: {}",
                     event.getId(), event.getTopic(), ex.getMessage());
@@ -68,7 +79,7 @@ public class OutboxPublisher {
             event.setErrorMessage(ex.getMessage());
             if (retries >= MAX_RETRIES) {
                 event.setStatus(OutboxStatus.FAILED);
-                log.error("Outbox event [{}] reached maximum retry count ({}) and is marked FAILED",
+                log.error("Outbox event [{}] reached maximum retry count ({}) and marked FAILED",
                         event.getId(), MAX_RETRIES);
             }
             outboxEventRepository.save(event);

@@ -8,7 +8,14 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "notification_logs")
+@Table(
+    name = "notification_logs",
+    indexes = {
+        @Index(name = "idx_notify_event_id", columnList = "event_id", unique = true),
+        @Index(name = "idx_notify_ref_id", columnList = "reference_id"),
+        @Index(name = "idx_notify_sent_at", columnList = "sent_at")
+    }
+)
 @Getter
 @Setter
 @Builder
@@ -20,7 +27,7 @@ public class NotificationLog {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "event_id")
+    @Column(name = "event_id", unique = true)
     private UUID eventId;
 
     @Column(name = "event_type", nullable = false, length = 64)
