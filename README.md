@@ -38,27 +38,18 @@ A production-grade, highly concurrent wallet and payments platform built with **
 ## Architecture Diagram
 
 ```mermaid
-flowchart TD
-    Client(["HTTP Client / Frontend"]) -->|POST /api/v1/transfers<br/>Idempotency-Key: UUID| WalletCtrl["Wallet Service<br/>(Spring Boot 3)"]
+flowchart LR
+    Client(["Client"]) -->|POST /transfers<br/>Idempotency-Key| WS["Wallet Service"]
     
-    subgraph WalletService["Wallet & Ledger Service"]
-        WalletCtrl --> Idemp["Idempotency Filter & Guard"]
-        Idemp --> Lock["Deterministic Pessimistic Lock<br/>(min(AccA, AccB) -> max(AccA, AccB))"]
-        Lock --> LedgerEng["Double-Entry Engine<br/>sum(Debits) == sum(Credits)"]
-        LedgerEng --> DB[("PostgreSQL DB<br/>• accounts<br/>• ledger_transactions<br/>• ledger_entries<br/>• outbox_events<br/>• idempotency_records")]
-        
-        OutboxPoller["Outbox Publisher Worker<br/>(@Scheduled)"] -.->|Poll PENDING| DB
+    subgraph Core["Ledger & Outbox Engine"]
+        WS --> Lock["Lock min/max(A, B)"]
+        Lock --> Ledger["Double-Entry<br/>∑Debits == ∑Credits"]
+        Ledger --> DB[("PostgreSQL")]
+        Worker["Outbox Worker"] -.->|Poll| DB
     end
 
-    OutboxPoller -->|Publish Events| KafkaBrokers{{"Apache Kafka Topic:<br/>wallet.transfers"}}
-
-    subgraph NotificationService["Notification Microservice"]
-        KafkaConsumer["Kafka Listener<br/>(TransferEventsConsumer)"]
-        NotifyDB[("Notification Store<br/>notification_logs")]
-        KafkaConsumer -.->|Store Audit| NotifyDB
-    end
-
-    KafkaBrokers -->|Consume TransferCompleted / Failed| KafkaConsumer
+    Worker -->|Publish| Kafka{{"Kafka Topic"}}
+    Kafka --> Notify["Notification Service"]
 ```
 
 ---
