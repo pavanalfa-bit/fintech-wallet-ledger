@@ -30,4 +30,13 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     @QueryHints({@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000")})
     @Query("SELECT a FROM Account a WHERE a.accountNumber = :accountNumber")
     Optional<Account> findByAccountNumberForUpdate(@Param("accountNumber") String accountNumber);
+
+    /**
+     * Latency Optimization: Locks both participating accounts in a SINGLE SQL query ordered deterministically.
+     * Cuts database round trips by 50% during transfer execution and guarantees deadlock prevention.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints({@QueryHint(name = "jakarta.persistence.lock.timeout", value = "5000")})
+    @Query("SELECT a FROM Account a WHERE a.accountNumber IN (:acc1, :acc2) ORDER BY a.accountNumber ASC")
+    List<Account> findBothByAccountNumbersForUpdate(@Param("acc1") String acc1, @Param("acc2") String acc2);
 }

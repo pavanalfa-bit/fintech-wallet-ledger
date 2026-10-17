@@ -37,25 +37,20 @@ public class TransferExecutionService {
             throw new IllegalArgumentException("Source and destination accounts must be distinct");
         }
 
-        // Deadlock Prevention: Deterministic Lock Order (Lexicographical Account Number sorting)
-        String firstAccNum = request.getSourceAccountNumber().compareTo(request.getDestinationAccountNumber()) < 0
-                ? request.getSourceAccountNumber()
-                : request.getDestinationAccountNumber();
+        // Latency Optimization & Deadlock Prevention: Single round-trip batch lock ordered lexicographically
+        List<Account> lockedAccounts = accountRepository.findBothByAccountNumbersForUpdate(
+                request.getSourceAccountNumber(), request.getDestinationAccountNumber());
 
-        String secondAccNum = request.getSourceAccountNumber().compareTo(request.getDestinationAccountNumber()) < 0
-                ? request.getDestinationAccountNumber()
-                : request.getSourceAccountNumber();
+        if (lockedAccounts.size() != 2) {
+            throw new AccountNotFoundException(String.format(
+                    "One or both accounts not found or inactive: %s, %s",
+                    request.getSourceAccountNumber(), request.getDestinationAccountNumber()));
+        }
 
-        Account lockedFirst = accountRepository.findByAccountNumberForUpdate(firstAccNum)
-                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + firstAccNum));
-
-        Account lockedSecond = accountRepository.findByAccountNumberForUpdate(secondAccNum)
-                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + secondAccNum));
-
-        Account sourceAccount = lockedFirst.getAccountNumber().equals(request.getSourceAccountNumber())
-                ? lockedFirst : lockedSecond;
-        Account destAccount = lockedFirst.getAccountNumber().equals(request.getDestinationAccountNumber())
-                ? lockedFirst : lockedSecond;
+        Account sourceAccount = lockedAccounts.get(0).getAccountNumber().equals(request.getSourceAccountNumber())
+                ? lockedAccounts.get(0) : lockedAccounts.get(1);
+        Account destAccount = lockedAccounts.get(0).getAccountNumber().equals(request.getDestinationAccountNumber())
+                ? lockedAccounts.get(0) : lockedAccounts.get(1);
 
         // Currency Validation
         if (!sourceAccount.getCurrency().equalsIgnoreCase(request.getCurrency()) ||
